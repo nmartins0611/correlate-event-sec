@@ -56,7 +56,7 @@ podman run --rm --network host --user 0 \
   --print-events
 ```
 
-On AAP (`https://aap.nostromo.io/`), point an EDA project at this repository and an activation inventory that has rhel01 in the `targets` group. Set the activation variables from `vars/lab.yml`. If the project root is the repository root, set `action_playbook` to `demos/security-correlation/playbooks/record-action.yml`. Build the decision environment from `decision-environment.yml` (it starts from `minimal-decision-environment.yml` and includes `ansible.eda` 2.12.1). The activation must reach `192.168.88.103:9092`.
+On AAP (`https://aap.nostromo.io/`), the activation uses `rulebooks/security-incidents-aap.yml` and launches the controller job template `Security correlation record action`. That template runs `playbooks/record-action.yml` against the `targets` group with the OT lab machine credential. Activation variables are `kafka_host` and `kafka_port` from `vars/lab.yml`. The activation must reach `192.168.88.103:9092`. The direct rulebook in `security-incidents.yml` stays for the local decision-environment image, which includes the hoist filter.
 
 Confirm the action log on rhel01:
 

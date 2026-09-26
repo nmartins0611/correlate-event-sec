@@ -1,0 +1,67 @@
+---
+# Runs on an AAP activation. The supported decision environment does not
+# include the local hoist filter, and the activation worker does not take
+# a local inventory. The controller job template records the action.
+
+- name: security incidents
+  hosts: all
+  sources:
+    - name: incidents
+      ansible.eda.kafka:
+        topic: security.incidents
+        host: "{{ kafka_host }}"
+        port: "{{ kafka_port }}"
+        group_id: security-incidents-aap
+        offset: earliest
+  rules:
+    - name: stolen credential
+      condition: event.body.kind == "stolen_credential"
+      action:
+        run_job_template:
+          name: Security correlation record action
+          organization: Default
+          job_args:
+            extra_vars:
+              incident_id: "{{ event.body.incident_id }}"
+              kind: "{{ event.body.kind }}"
+              correlation_key: "{{ event.body.correlation_key }}"
+              attributes: "{{ event.body.attributes }}"
+
+    - name: exposed finding
+      condition: event.body.kind == "exposed_finding"
+      action:
+        run_job_template:
+          name: Security correlation record action
+          organization: Default
+          job_args:
+            extra_vars:
+              incident_id: "{{ event.body.incident_id }}"
+              kind: "{{ event.body.kind }}"
+              correlation_key: "{{ event.body.correlation_key }}"
+              attributes: "{{ event.body.attributes }}"
+
+    - name: change outside window
+      condition: event.body.kind == "change_outside_window"
+      action:
+        run_job_template:
+          name: Security correlation record action
+          organization: Default
+          job_args:
+            extra_vars:
+              incident_id: "{{ event.body.incident_id }}"
+              kind: "{{ event.body.kind }}"
+              correlation_key: "{{ event.body.correlation_key }}"
+              attributes: "{{ event.body.attributes }}"
+
+    - name: break in
+      condition: event.body.kind == "break_in"
+      action:
+        run_job_template:
+          name: Security correlation record action
+          organization: Default
+          job_args:
+            extra_vars:
+              incident_id: "{{ event.body.incident_id }}"
+              kind: "{{ event.body.kind }}"
+              correlation_key: "{{ event.body.correlation_key }}"
+              attributes: "{{ event.body.attributes }}"
