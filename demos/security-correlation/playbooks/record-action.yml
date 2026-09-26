@@ -22,15 +22,25 @@
       ansible.builtin.set_fact:
         attributes_object: "{{ attributes }}"
 
-    - name: Describe the recorded action
+    - name: Describe a stolen credential action
       ansible.builtin.set_fact:
-        intent: "{{ intent_for_kind[kind] }}"
-      vars:
-        intent_for_kind:
-          stolen_credential: "revoke the lease and disable the AppRole {{ attributes_object.identity }}"
-          exposed_finding: "run the mitigation job for {{ attributes_object.host }} and {{ attributes_object.cve }}"
-          change_outside_window: "snapshot the change {{ attributes_object.change }} and start the revert workflow"
-          break_in: "disable {{ attributes_object.account }}, quarantine {{ attributes_object.host }}, and block {{ attributes_object.src_ip }}"
+        intent: "revoke the lease and disable the AppRole {{ attributes_object.identity }}"
+      when: kind == "stolen_credential"
+
+    - name: Describe an exposed finding action
+      ansible.builtin.set_fact:
+        intent: "run the mitigation job for {{ attributes_object.host }} and {{ attributes_object.cve }}"
+      when: kind == "exposed_finding"
+
+    - name: Describe a change outside the approval window
+      ansible.builtin.set_fact:
+        intent: "snapshot the change {{ attributes_object.change }} and start the revert workflow"
+      when: kind == "change_outside_window"
+
+    - name: Describe a break-in action
+      ansible.builtin.set_fact:
+        intent: "disable {{ attributes_object.account }}, quarantine {{ attributes_object.host }}, and block {{ attributes_object.src_ip }}"
+      when: kind == "break_in"
 
     - name: Build the action record
       ansible.builtin.set_fact:
