@@ -1,0 +1,19 @@
+[Unit]
+Description=Apache Flink TaskManager
+After=flink-jobmanager.service
+Requires=flink-jobmanager.service
+
+[Service]
+Type=simple
+User=flink
+Group=flink
+Environment=JAVA_HOME={{ java_home }}
+Environment=PATH={{ java_path }}
+Environment=FLINK_HOME={{ flink_install_dir }}
+ExecStart={{ flink_install_dir }}/bin/taskmanager.sh start-foreground
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=100000
+
+[Install]
+WantedBy=multi-user.target

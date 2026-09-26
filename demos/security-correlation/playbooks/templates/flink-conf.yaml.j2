@@ -1,0 +1,12 @@
+jobmanager.rpc.address: 127.0.0.1
+jobmanager.bind-host: 127.0.0.1
+rest.address: {{ flink_rest_host }}
+rest.bind-address: {{ flink_rest_host }}
+rest.port: {{ flink_rest_port }}
+taskmanager.host: 127.0.0.1
+taskmanager.bind-host: 127.0.0.1
+taskmanager.numberOfTaskSlots: {{ flink_task_slots }}
+parallelism.default: 1
+jobmanager.memory.process.size: {{ flink_jobmanager_memory }}
+taskmanager.memory.process.size: {{ flink_taskmanager_memory }}
+table.exec.source.idle-timeout: 5000 ms

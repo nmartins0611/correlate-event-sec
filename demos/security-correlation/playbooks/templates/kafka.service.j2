@@ -1,0 +1,20 @@
+[Unit]
+Description=Apache Kafka
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kafka
+Group=kafka
+Environment=JAVA_HOME={{ java_home }}
+Environment=PATH={{ java_path }}
+Environment=KAFKA_HEAP_OPTS={{ kafka_heap_opts }}
+ExecStart={{ kafka_install_dir }}/bin/kafka-server-start.sh {{ kafka_config_dir }}/server.properties
+ExecStop={{ kafka_install_dir }}/bin/kafka-server-stop.sh
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=100000
+
+[Install]
+WantedBy=multi-user.target

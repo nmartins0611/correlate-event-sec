@@ -1,0 +1,4 @@
+---
+kafka_host: 192.168.88.103
+kafka_port: "9092"
+action_playbook: playbooks/record-action.yml

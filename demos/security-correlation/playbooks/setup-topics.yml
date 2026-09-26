@@ -1,0 +1,33 @@
+---
+- name: Create the raw topics and security.incidents
+  hosts: streaming
+  gather_facts: false
+  become: false
+  tasks:
+    - name: Require the topic list
+      ansible.builtin.assert:
+        that:
+          - kafka_topics | length > 0
+          - kafka_bootstrap | length > 0
+        fail_msg: Set kafka_topics and kafka_bootstrap in inventories/group_vars/streaming.yml
+
+    - name: Create each topic
+      ansible.builtin.command:
+        argv:
+          - "{{ kafka_install_dir }}/bin/kafka-topics.sh"
+          - --bootstrap-server
+          - "{{ kafka_bootstrap }}"
+          - --create
+          - --if-not-exists
+          - --topic
+          - "{{ item }}"
+          - --partitions
+          - "1"
+          - --replication-factor
+          - "1"
+      environment:
+        JAVA_HOME: "{{ java_home }}"
+        PATH: "{{ java_path }}"
+      loop: "{{ kafka_topics }}"
+      register: topic_create
+      changed_when: "'Created topic' in topic_create.stdout"

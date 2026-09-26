@@ -1,0 +1,9 @@
+---
+- name: Install Kafka
+  ansible.builtin.import_playbook: setup-kafka.yml
+
+- name: Create topics
+  ansible.builtin.import_playbook: setup-topics.yml
+
+- name: Install Flink and submit the jobs
+  ansible.builtin.import_playbook: setup-flink.yml

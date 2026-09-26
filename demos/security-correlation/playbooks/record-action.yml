@@ -1,0 +1,92 @@
+---
+- name: Record one correlated incident action
+  hosts: targets
+  gather_facts: false
+  become: false
+  vars:
+    action_log: /tmp/security-demo/actions.jsonl
+  tasks:
+    - name: Require a known incident kind
+      ansible.builtin.assert:
+        that:
+          - kind in ["stolen_credential", "exposed_finding", "change_outside_window", "break_in"]
+        fail_msg: "Refusing to record unknown incident kind {{ kind }}"
+
+    - name: Require attributes to be an object
+      ansible.builtin.assert:
+        that:
+          - attributes is mapping
+        fail_msg: "Incident attributes must be an object"
+
+    - name: Keep the attributes object
+      ansible.builtin.set_fact:
+        attributes_object: "{{ attributes }}"
+
+    - name: Describe the recorded action
+      ansible.builtin.set_fact:
+        intent: "{{ intent_for_kind[kind] }}"
+      vars:
+        intent_for_kind:
+          stolen_credential: "revoke the lease and disable the AppRole {{ attributes_object.identity }}"
+          exposed_finding: "run the mitigation job for {{ attributes_object.host }} and {{ attributes_object.cve }}"
+          change_outside_window: "snapshot the change {{ attributes_object.change }} and start the revert workflow"
+          break_in: "disable {{ attributes_object.account }}, quarantine {{ attributes_object.host }}, and block {{ attributes_object.src_ip }}"
+
+    - name: Build the action record
+      ansible.builtin.set_fact:
+        action_record:
+          incident_id: "{{ incident_id }}"
+          kind: "{{ kind }}"
+          correlation_key: "{{ correlation_key }}"
+          attributes: "{{ attributes_object }}"
+          intent: "{{ intent }}"
+
+    - name: Serialize the action record
+      ansible.builtin.set_fact:
+        action_line: "{{ action_record | to_json }}"
+
+    - name: Ensure the action directory exists
+      ansible.builtin.file:
+        path: /tmp/security-demo
+        state: directory
+        mode: "0755"
+
+    - name: Check for an existing action log
+      ansible.builtin.stat:
+        path: "{{ action_log }}"
+      register: log_stat
+
+    - name: Read the action log
+      ansible.builtin.slurp:
+        src: "{{ action_log }}"
+      register: log_slurp
+      when: log_stat.stat.exists
+
+    - name: Collect incident ids already recorded
+      ansible.builtin.set_fact:
+        existing_ids: "{{ (log_slurp.content | b64decode).split('\n') | select | map('from_json') | map(attribute='incident_id') | list }}"
+      when: log_stat.stat.exists
+
+    - name: Start from an empty action log
+      ansible.builtin.set_fact:
+        existing_ids: []
+      when: not log_stat.stat.exists
+
+    - name: Skip a replay of the same incident
+      ansible.builtin.debug:
+        msg: duplicate
+      when: incident_id in existing_ids
+
+    - name: Append the action
+      ansible.builtin.lineinfile:
+        path: "{{ action_log }}"
+        line: "{{ action_line }}"
+        create: true
+        insertafter: EOF
+        mode: "0644"
+      when: incident_id not in existing_ids
+
+    - name: Print the recorded action
+      ansible.builtin.debug:
+        msg: "{{ action_line }}"
+      when: incident_id not in existing_ids

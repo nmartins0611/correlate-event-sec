@@ -1,0 +1,162 @@
+---
+services:
+  zookeeper:
+    image: mirror.gcr.io/confluentinc/cp-zookeeper:7.0.1
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  broker:
+    image: mirror.gcr.io/confluentinc/cp-kafka:7.0.1
+    ports:
+      - "9092:19092"
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:19092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker:9092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+    healthcheck:
+      test: nc -vz broker 9092
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  kafka-init:
+    image: mirror.gcr.io/confluentinc/cp-kafka:7.0.1
+    depends_on:
+      broker:
+        condition: service_healthy
+    restart: "no"
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        topics="auth.failures vault.audit scanner.findings exposure.observations changes.applied changes.approvals auth.attempts auth.accepted host.egress security.incidents"
+        for topic in $$topics; do
+          kafka-topics --bootstrap-server broker:9092 --create --if-not-exists --topic "$$topic" --partitions 1 --replication-factor 1
+        done
+
+  flink-lib-init:
+    image: mirror.gcr.io/library/curlimages/curl:8.11.1
+    user: "0"
+    volumes:
+      - flink-extra:/connectors
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        curl -fsSL -o /connectors/flink-sql-connector-kafka-3.3.0-1.19.jar \
+          https://repo1.maven.org/maven2/org/apache/flink/flink-sql-connector-kafka/3.3.0-1.19/flink-sql-connector-kafka-3.3.0-1.19.jar
+    restart: "no"
+
+  flink-jobmanager:
+    image: mirror.gcr.io/library/flink:1.19.3-scala_2.12-java17
+    depends_on:
+      flink-lib-init:
+        condition: service_completed_successfully
+      kafka-init:
+        condition: service_completed_successfully
+    ports:
+      - "8081:8081"
+    volumes:
+      - flink-extra:/connectors:ro
+      - ./flink/sql:/opt/flink/sql:ro
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        rest.address: flink-jobmanager
+        rest.port: 8081
+        taskmanager.numberOfTaskSlots: 8
+        parallelism.default: 1
+        table.exec.source.idle-timeout: 5000 ms
+        jobmanager.memory.process.size: 1024m
+        taskmanager.memory.process.size: 2048m
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - cp /connectors/*.jar /opt/flink/lib/ && exec /docker-entrypoint.sh jobmanager
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/8081'"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  flink-taskmanager:
+    image: mirror.gcr.io/library/flink:1.19.3-scala_2.12-java17
+    depends_on:
+      flink-jobmanager:
+        condition: service_healthy
+    volumes:
+      - flink-extra:/connectors:ro
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 8
+        parallelism.default: 1
+        table.exec.source.idle-timeout: 5000 ms
+        taskmanager.memory.process.size: 2048m
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - cp /connectors/*.jar /opt/flink/lib/ && exec /docker-entrypoint.sh taskmanager
+
+  flink-sql:
+    image: mirror.gcr.io/library/flink:1.19.3-scala_2.12-java17
+    depends_on:
+      flink-taskmanager:
+        condition: service_started
+      flink-jobmanager:
+        condition: service_healthy
+    volumes:
+      - flink-extra:/connectors:ro
+      - ./flink/sql:/opt/flink/sql:ro
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        rest.address: flink-jobmanager
+        rest.port: 8081
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        cp /connectors/*.jar /opt/flink/lib/
+        for _ in $$(seq 1 30); do
+          bash -c 'echo > /dev/tcp/flink-jobmanager/8081' && break
+          sleep 2
+        done
+        for sql in /opt/flink/sql/*.sql; do
+          /opt/flink/bin/sql-client.sh -f "$$sql"
+        done
+        /opt/flink/bin/flink list -r
+    restart: "no"
+
+  rulebook:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command:
+      - ansible-rulebook
+      - -r
+      - /rulebooks/security-incidents.yml
+      - -i
+      - /inventory.yml
+      - -e
+      - /vars/compose.yml
+      - --print-events
+    environment:
+      ANSIBLE_COLLECTIONS_PATH: /usr/share/ansible/collections
+    volumes:
+      - ./rulebooks:/rulebooks:ro
+      - ./playbooks:/playbooks:ro
+      - ./inventory.yml:/inventory.yml:ro
+      - ./vars/compose.yml:/vars/compose.yml:ro
+    depends_on:
+      flink-sql:
+        condition: service_completed_successfully
+      broker:
+        condition: service_healthy
+
+volumes:
+  flink-extra:

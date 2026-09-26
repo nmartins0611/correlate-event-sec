@@ -1,0 +1,18 @@
+---
+all:
+  children:
+    streaming:
+      hosts:
+        rhel02.nostromo.io:
+          ansible_host: 192.168.88.103
+          ansible_user: root
+    targets:
+      hosts:
+        rhel01.nostromo.io:
+          ansible_host: 192.168.88.121
+          ansible_user: root
+    automation_platform:
+      hosts:
+        aap.nostromo.io:
+          ansible_host: 192.168.88.163
+          ansible_user: srvadmin

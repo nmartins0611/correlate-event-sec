@@ -1,0 +1,53 @@
+---
+kafka_version: "3.9.1"
+kafka_scala_version: "2.13"
+kafka_tarball_url: "https://archive.apache.org/dist/kafka/3.9.1/kafka_2.13-3.9.1.tgz"
+kafka_tarball_checksum: "sha512:1EA204BA73411737A275429CA976D440F007FF0957B90B19BE41DC5A4BAE52617267769BE9F0B5791714D0B3C4C760605BD426FAEA39EDD90763585523FA2CFE"
+kafka_install_dir: /opt/kafka
+kafka_data_dir: /var/lib/kafka/kraft-combined-logs
+kafka_config_dir: /etc/kafka
+kafka_cluster_id: "MkU3OEVBNTcwNTJENDM2Qk"
+kafka_advertised_host: 192.168.88.103
+kafka_plaintext_port: 9092
+kafka_controller_port: 9093
+kafka_bootstrap: "192.168.88.103:9092"
+kafka_heap_opts: "-Xms512M -Xmx1G"
+kafka_client_cidr: 192.168.88.0/24
+kafka_topics:
+  - auth.failures
+  - vault.audit
+  - scanner.findings
+  - exposure.observations
+  - changes.applied
+  - changes.approvals
+  - auth.attempts
+  - auth.accepted
+  - host.egress
+  - security.incidents
+
+flink_version: "1.19.3"
+flink_scala_version: "2.12"
+flink_tarball_url: "https://archive.apache.org/dist/flink/flink-1.19.3/flink-1.19.3-bin-scala_2.12.tgz"
+flink_tarball_checksum: "sha512:8c69131bf6027c5936b9467c100a83b7f04fe4e86f55de777587d1ba74288b8997a305679836d8d871acfd60d43dd6101f93708d1784b3ba22d20e8f47e7dc3e"
+flink_install_dir: /opt/flink
+flink_sql_dir: /opt/flink/sql
+flink_rest_host: 127.0.0.1
+flink_rest_port: 8081
+flink_jobmanager_memory: 1024m
+flink_taskmanager_memory: 2048m
+flink_task_slots: 8
+flink_connector_url: "https://repo1.maven.org/maven2/org/apache/flink/flink-sql-connector-kafka/3.3.0-1.19/flink-sql-connector-kafka-3.3.0-1.19.jar"
+flink_connector_checksum: "sha1:52316594ad834c75dd53960c66a1020bf200a432"
+flink_connector_jar: flink-sql-connector-kafka-3.3.0-1.19.jar
+flink_sql_jobs:
+  - stolen-credential.sql
+  - exposed-finding.sql
+  - change-outside-window.sql
+  - break-in.sql
+download_dir: /var/cache/security-correlation
+java_tarball_url: "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.20.1%2B1/OpenJDK17U-jdk_x64_linux_hotspot_17.0.20.1_1.tar.gz"
+java_tarball_checksum: "sha256:3808d1d15e3ec6bd5b84057fb5d84c33d8a1536a258146bcea2e603fc726e08e"
+java_tarball_name: OpenJDK17U-jdk_x64_linux_hotspot_17.0.20.1_1.tar.gz
+java_unpacked_dir: jdk-17.0.20.1+1
+java_home: /opt/java
+java_path: "/opt/java/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"

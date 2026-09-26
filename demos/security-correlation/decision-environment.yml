@@ -1,0 +1,38 @@
+---
+version: 3
+
+images:
+  base_image:
+    name: "registry.access.redhat.com/ubi9/python-312:latest"
+
+options:
+  package_manager_path: /usr/bin/microdnf
+
+dependencies:
+  python_interpreter:
+    python_path: /usr/bin/python3.12
+  galaxy:
+    collections:
+      - name: ansible.eda
+        version: "2.12.1"
+  python:
+    - ansible-rulebook
+    - aiokafka
+  ansible_core:
+    package_pip: ansible-core~=2.20.7
+  ansible_runner:
+    package_pip: ansible-runner
+  system:
+    - java-17-openjdk-headless [platform:rpm]
+    - gcc [compile platform:rpm]
+    - python3.12-devel [compile platform:rpm]
+
+additional_build_files:
+  - src: collections/ansible_collections/security
+    dest: security_collection
+
+additional_build_steps:
+  prepend_final:
+    - COPY _build/security_collection /usr/share/ansible/collections/ansible_collections/security
+    - ENV ANSIBLE_COLLECTIONS_PATH=/usr/share/ansible/collections
+    - ENV JAVA_HOME=/usr/lib/jvm/jre-17-openjdk

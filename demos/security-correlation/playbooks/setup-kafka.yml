@@ -1,0 +1,145 @@
+---
+- name: Install Kafka on the streaming host
+  hosts: streaming
+  gather_facts: false
+  become: false
+  tasks:
+    - name: Require the streaming settings
+      ansible.builtin.assert:
+        that:
+          - kafka_version | length > 0
+          - kafka_advertised_host | length > 0
+          - kafka_cluster_id | length > 0
+          - kafka_bootstrap | length > 0
+        fail_msg: Set the Kafka variables in inventories/group_vars/streaming.yml
+
+    - name: Install Temurin 17
+      ansible.builtin.include_tasks: tasks/install-java.yml
+
+    - name: Create the Kafka service account
+      ansible.builtin.user:
+        name: kafka
+        system: true
+        shell: /sbin/nologin
+        create_home: false
+
+    - name: Create Kafka directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: kafka
+        group: kafka
+        mode: "0755"
+      loop:
+        - "{{ download_dir }}"
+        - "{{ kafka_config_dir }}"
+        - "{{ kafka_data_dir }}"
+        - /opt
+
+    - name: Download the Kafka tarball
+      ansible.builtin.get_url:
+        url: "{{ kafka_tarball_url }}"
+        dest: "{{ download_dir }}/kafka_{{ kafka_scala_version }}-{{ kafka_version }}.tgz"
+        checksum: "{{ kafka_tarball_checksum }}"
+        mode: "0644"
+
+    - name: Unpack Kafka
+      ansible.builtin.unarchive:
+        src: "{{ download_dir }}/kafka_{{ kafka_scala_version }}-{{ kafka_version }}.tgz"
+        dest: /opt
+        remote_src: true
+        owner: kafka
+        group: kafka
+        creates: "/opt/kafka_{{ kafka_scala_version }}-{{ kafka_version }}/bin/kafka-server-start.sh"
+
+    - name: Link the Kafka install
+      ansible.builtin.file:
+        src: "/opt/kafka_{{ kafka_scala_version }}-{{ kafka_version }}"
+        dest: "{{ kafka_install_dir }}"
+        state: link
+        owner: kafka
+        group: kafka
+
+    - name: Write the Kafka broker configuration
+      ansible.builtin.template:
+        src: server.properties.j2
+        dest: "{{ kafka_config_dir }}/server.properties"
+        owner: kafka
+        group: kafka
+        mode: "0640"
+      notify: Restart Kafka
+
+    - name: Install the Kafka systemd unit
+      ansible.builtin.template:
+        src: kafka.service.j2
+        dest: /etc/systemd/system/kafka.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart Kafka
+
+    - name: Check whether KRaft storage is already formatted
+      ansible.builtin.stat:
+        path: "{{ kafka_data_dir }}/meta.properties"
+      register: kafka_meta
+
+    - name: Format KRaft storage once
+      ansible.builtin.command:
+        argv:
+          - runuser
+          - -u
+          - kafka
+          - --
+          - "{{ kafka_install_dir }}/bin/kafka-storage.sh"
+          - format
+          - -t
+          - "{{ kafka_cluster_id }}"
+          - -c
+          - "{{ kafka_config_dir }}/server.properties"
+          - --ignore-formatted
+      environment:
+        JAVA_HOME: "{{ java_home }}"
+        PATH: "{{ java_path }}"
+      when: not kafka_meta.stat.exists
+
+    - name: Start Kafka
+      ansible.builtin.systemd:
+        name: kafka
+        state: started
+        enabled: true
+        daemon_reload: true
+
+    - name: Wait for the Kafka listener
+      ansible.builtin.wait_for:
+        host: "{{ kafka_advertised_host }}"
+        port: "{{ kafka_plaintext_port }}"
+        timeout: 120
+
+    - name: See whether the lab Kafka rule is already allowed
+      ansible.builtin.command:
+        argv:
+          - firewall-cmd
+          - --permanent
+          - --query-rich-rule=rule family="ipv4" source address="{{ kafka_client_cidr }}" port port="{{ kafka_plaintext_port }}" protocol="tcp" accept
+      register: kafka_firewall_query
+      changed_when: false
+      failed_when: false
+
+    - name: Allow the lab subnet to reach Kafka
+      ansible.builtin.command:
+        argv:
+          - firewall-cmd
+          - --permanent
+          - --add-rich-rule=rule family="ipv4" source address="{{ kafka_client_cidr }}" port port="{{ kafka_plaintext_port }}" protocol="tcp" accept
+      when: kafka_firewall_query.rc != 0
+
+    - name: Reload firewalld after opening Kafka
+      ansible.builtin.command: firewall-cmd --reload
+      when: kafka_firewall_query.rc != 0
+
+  handlers:
+    - name: Restart Kafka
+      ansible.builtin.systemd:
+        name: kafka
+        state: restarted
+        daemon_reload: true

@@ -1,0 +1,57 @@
+---
+- name: security incidents
+  hosts: targets
+  sources:
+    - name: incidents
+      ansible.eda.kafka:
+        topic: security.incidents
+        host: "{{ kafka_host }}"
+        port: "{{ kafka_port }}"
+        group_id: security-incidents-rulebook
+        offset: earliest
+      filters:
+        - security.demo.hoist_body:
+  rules:
+    - name: stolen credential
+      condition: event.kind == "stolen_credential"
+      action:
+        run_playbook:
+          name: "{{ action_playbook }}"
+          extra_vars:
+            incident_id: "{{ event.incident_id }}"
+            kind: "{{ event.kind }}"
+            correlation_key: "{{ event.correlation_key }}"
+            attributes: "{{ event.attributes }}"
+
+    - name: exposed finding
+      condition: event.kind == "exposed_finding"
+      action:
+        run_playbook:
+          name: "{{ action_playbook }}"
+          extra_vars:
+            incident_id: "{{ event.incident_id }}"
+            kind: "{{ event.kind }}"
+            correlation_key: "{{ event.correlation_key }}"
+            attributes: "{{ event.attributes }}"
+
+    - name: change outside window
+      condition: event.kind == "change_outside_window"
+      action:
+        run_playbook:
+          name: "{{ action_playbook }}"
+          extra_vars:
+            incident_id: "{{ event.incident_id }}"
+            kind: "{{ event.kind }}"
+            correlation_key: "{{ event.correlation_key }}"
+            attributes: "{{ event.attributes }}"
+
+    - name: break in
+      condition: event.kind == "break_in"
+      action:
+        run_playbook:
+          name: "{{ action_playbook }}"
+          extra_vars:
+            incident_id: "{{ event.incident_id }}"
+            kind: "{{ event.kind }}"
+            correlation_key: "{{ event.correlation_key }}"
+            attributes: "{{ event.attributes }}"

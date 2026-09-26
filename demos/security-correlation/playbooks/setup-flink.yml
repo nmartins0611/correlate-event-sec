@@ -1,0 +1,189 @@
+---
+- name: Install Flink and submit the correlation jobs
+  hosts: streaming
+  gather_facts: false
+  become: false
+  tasks:
+    - name: Require the Flink settings
+      ansible.builtin.assert:
+        that:
+          - flink_version | length > 0
+          - kafka_bootstrap | length > 0
+          - flink_sql_jobs | length == 4
+        fail_msg: Set the Flink variables in inventories/group_vars/streaming.yml
+
+    - name: Install Temurin 17
+      ansible.builtin.include_tasks: tasks/install-java.yml
+
+    - name: Create the Flink service account
+      ansible.builtin.user:
+        name: flink
+        system: true
+        shell: /sbin/nologin
+        create_home: false
+
+    - name: Create the download directory
+      ansible.builtin.file:
+        path: "{{ download_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Download the Flink tarball
+      ansible.builtin.get_url:
+        url: "{{ flink_tarball_url }}"
+        dest: "{{ download_dir }}/flink-{{ flink_version }}-bin-scala_{{ flink_scala_version }}.tgz"
+        checksum: "{{ flink_tarball_checksum }}"
+        mode: "0644"
+
+    - name: Unpack Flink
+      ansible.builtin.unarchive:
+        src: "{{ download_dir }}/flink-{{ flink_version }}-bin-scala_{{ flink_scala_version }}.tgz"
+        dest: /opt
+        remote_src: true
+        owner: flink
+        group: flink
+        creates: "/opt/flink-{{ flink_version }}/bin/jobmanager.sh"
+
+    - name: Link the Flink install
+      ansible.builtin.file:
+        src: "/opt/flink-{{ flink_version }}"
+        dest: "{{ flink_install_dir }}"
+        state: link
+
+    - name: Download the Kafka SQL connector
+      ansible.builtin.get_url:
+        url: "{{ flink_connector_url }}"
+        dest: "{{ flink_install_dir }}/lib/{{ flink_connector_jar }}"
+        checksum: "{{ flink_connector_checksum }}"
+        owner: flink
+        group: flink
+        mode: "0644"
+
+    - name: Write the Flink configuration
+      ansible.builtin.template:
+        src: flink-conf.yaml.j2
+        dest: "{{ flink_install_dir }}/conf/flink-conf.yaml"
+        owner: flink
+        group: flink
+        mode: "0644"
+      notify:
+        - Restart Flink taskmanager
+        - Restart Flink jobmanager
+
+    - name: Install the Flink systemd units
+      ansible.builtin.template:
+        src: "{{ item.src }}"
+        dest: "/etc/systemd/system/{{ item.dest }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop:
+        - src: flink-jobmanager.service.j2
+          dest: flink-jobmanager.service
+        - src: flink-taskmanager.service.j2
+          dest: flink-taskmanager.service
+      notify:
+        - Restart Flink taskmanager
+        - Restart Flink jobmanager
+
+    - name: Create the SQL directory
+      ansible.builtin.file:
+        path: "{{ flink_sql_dir }}"
+        state: directory
+        owner: flink
+        group: flink
+        mode: "0755"
+
+    - name: Install the correlation SQL
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../flink/sql/{{ item }}"
+        dest: "{{ flink_sql_dir }}/{{ item }}"
+        owner: flink
+        group: flink
+        mode: "0644"
+      loop: "{{ flink_sql_jobs }}"
+
+    - name: Point the SQL jobs at this host's Kafka broker
+      ansible.builtin.replace:
+        path: "{{ flink_sql_dir }}/{{ item }}"
+        regexp: "broker:9092"
+        replace: "{{ kafka_bootstrap }}"
+      loop: "{{ flink_sql_jobs }}"
+
+    - name: Start the Flink JobManager
+      ansible.builtin.systemd:
+        name: flink-jobmanager
+        state: started
+        enabled: true
+        daemon_reload: true
+
+    - name: Start the Flink TaskManager
+      ansible.builtin.systemd:
+        name: flink-taskmanager
+        state: started
+        enabled: true
+        daemon_reload: true
+
+    - name: Apply configuration restarts before submitting jobs
+      ansible.builtin.meta: flush_handlers
+
+    - name: Wait for the Flink REST endpoint
+      ansible.builtin.wait_for:
+        host: "{{ flink_rest_host }}"
+        port: "{{ flink_rest_port }}"
+        timeout: 120
+
+    - name: List running Flink jobs
+      ansible.builtin.command: "{{ flink_install_dir }}/bin/flink list -r"
+      register: flink_running
+      changed_when: false
+      environment:
+        JAVA_HOME: "{{ java_home }}"
+        PATH: "{{ java_path }}"
+        FLINK_HOME: "{{ flink_install_dir }}"
+
+    - name: Submit a correlation job
+      ansible.builtin.command:
+        argv:
+          - "{{ flink_install_dir }}/bin/sql-client.sh"
+          - -f
+          - "{{ flink_sql_dir }}/{{ item }}"
+      loop: "{{ flink_sql_jobs }}"
+      when: (item | split('.') | first) not in flink_running.stdout
+      register: sql_job
+      failed_when: "'[ERROR]' in stdout"
+      environment:
+        JAVA_HOME: "{{ java_home }}"
+        PATH: "{{ java_path }}"
+        FLINK_HOME: "{{ flink_install_dir }}"
+
+    - name: Wait until each correlation job is running
+      ansible.builtin.command: "{{ flink_install_dir }}/bin/flink list -r"
+      register: flink_after_submit
+      changed_when: false
+      retries: 20
+      delay: 3
+      until:
+        - "'stolen-credential' in flink_after_submit.stdout"
+        - "'exposed-finding' in flink_after_submit.stdout"
+        - "'change-outside-window' in flink_after_submit.stdout"
+        - "'break-in' in flink_after_submit.stdout"
+      environment:
+        JAVA_HOME: "{{ java_home }}"
+        PATH: "{{ java_path }}"
+        FLINK_HOME: "{{ flink_install_dir }}"
+
+  handlers:
+    - name: Restart Flink taskmanager
+      ansible.builtin.systemd:
+        name: flink-taskmanager
+        state: restarted
+        daemon_reload: true
+
+    - name: Restart Flink jobmanager
+      ansible.builtin.systemd:
+        name: flink-jobmanager
+        state: restarted
+        daemon_reload: true

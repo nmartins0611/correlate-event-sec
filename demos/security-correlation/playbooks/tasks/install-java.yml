@@ -1,0 +1,35 @@
+---
+- name: Require the Java settings
+  ansible.builtin.assert:
+    that:
+      - java_tarball_url | length > 0
+      - java_home | length > 0
+    fail_msg: Set the Java variables in inventories/group_vars/streaming.yml
+
+- name: Create the Java download directory
+  ansible.builtin.file:
+    path: "{{ download_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Download Temurin 17
+  ansible.builtin.get_url:
+    url: "{{ java_tarball_url }}"
+    dest: "{{ download_dir }}/{{ java_tarball_name }}"
+    checksum: "{{ java_tarball_checksum }}"
+    mode: "0644"
+
+- name: Unpack Temurin 17
+  ansible.builtin.unarchive:
+    src: "{{ download_dir }}/{{ java_tarball_name }}"
+    dest: /opt
+    remote_src: true
+    creates: "/opt/{{ java_unpacked_dir }}/bin/java"
+
+- name: Link the Java home
+  ansible.builtin.file:
+    src: "/opt/{{ java_unpacked_dir }}"
+    dest: "{{ java_home }}"
+    state: link

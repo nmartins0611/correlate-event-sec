@@ -1,0 +1,4 @@
+---
+kafka_host: broker
+kafka_port: "9092"
+action_playbook: /playbooks/record-action.yml
